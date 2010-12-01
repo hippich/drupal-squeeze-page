@@ -1,0 +1,5 @@
+; $Id$
+name = Squeeze
+description = Require user to fill webform before accessing node.
+core = 6.x
+dependencies[] = webform
