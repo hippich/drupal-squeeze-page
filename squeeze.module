@@ -128,11 +128,11 @@ function squeeze_webform_save_sid_on_submit($form, &$form_state) {
     $sid = $form_state['values']['details']['sid'];
     $nid = $form_state['values']['details']['nid'];
     $_SESSION['webform_submissions'][$nid] = $sid;
+  }
 
-    if ($_SESSION['destination']) {
-      $form_state['redirect'][0] = $_SESSION['destination'];
-      $_SESSION['destination'] = FALSE;
-    }
+  if ($_SESSION['destination']) {
+    $form_state['redirect'][0] = $_SESSION['destination'];
+    $_SESSION['destination'] = FALSE;
   }
 }
 
