@@ -1,18 +1,36 @@
 <?php
-
-
+/**
+ * Implements hook_perm().
+ */
 function squeeze_perm() {
   return array(
+    "administer squeeze settings",
     "configure node's squeeze settings",
     "skip squeeze page",
   );
 }
 
+/**
+ * Implements hook_menu().
+ */
+function squeeze_menu() {
+  $items = array();
+  $items['admin/settings/squeeze'] = array(
+    'title' => 'Squeeze',
+    'description' => 'Configure global settings for the Squeeze module.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('squeeze_admin_settings'),
+    'access arguments' => array('administer squeeze settings'),
+    'file' => 'squeeze.admin.inc',
+  );
+  return $items;
+}
 
+/**
+ * Implements hook_init().
+ */
 function squeeze_init() {
-  global $user;
-
-  if (!user_access('skip squeeze page')) {
+  if (variable_get('squeeze_settings_anonymous_only', 0) ? user_is_anonymous() : !user_access('skip squeeze page')) {
 
     $nid = '';
 
@@ -55,7 +73,7 @@ function squeeze_init() {
 
       if ($squeeze_page_nid > 0) {
         $GLOBALS['conf']['cache'] = 0;
-
+        global $user;
         if ($_SESSION['webform_submissions'][$squeeze_page_nid] > 0) {
           $sid = $_SESSION['webform_submissions'][$squeeze_page_nid];
         }
@@ -75,12 +93,12 @@ function squeeze_init() {
         }
       }
     }
-
-
   }
 }
 
-
+/**
+ * Implements hook_form_alter().
+ */
 function squeeze_form_alter(&$form, &$form_state, $form_id) {
   if ($form['#id'] == 'node-form' && user_access("configure node's squeeze settings")) {
     $form['squeeze_fieldset'] = array(
@@ -135,7 +153,9 @@ function squeeze_webform_save_sid_on_submit($form, &$form_state) {
   }
 }
 
-
+/**
+ * Implements hook_nodeapi().
+ */
 function squeeze_nodeapi(&$node, $op, $a3, $a4) {
   switch ($op) {
     case 'insert':
