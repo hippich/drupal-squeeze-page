@@ -100,7 +100,7 @@ function squeeze_init() {
  * Implements hook_form_alter().
  */
 function squeeze_form_alter(&$form, &$form_state, $form_id) {
-  if ($form['#id'] == 'node-form' && user_access("configure node's squeeze settings")) {
+  if ($form['#id'] == 'node-form' && squeeze_is_supported_type($form['#node']->type) && user_access("configure node's squeeze settings")) {
     $form['squeeze_fieldset'] = array(
       '#type'         => 'fieldset',
       '#title'        => t("Squeeze page settings"),
@@ -160,13 +160,16 @@ function squeeze_nodeapi(&$node, $op, $a3, $a4) {
   switch ($op) {
     case 'insert':
     case 'update':
-      if ($node->squeeze_form) {
-        variable_set('squeeze_node_'. $node->nid, $node->squeeze_form);
-        variable_set('squeeze_node_'. $node->nid .'_show_page', $node->squeeze_show_page);
-      }
-      else {
-        variable_del('squeeze_node_'. $node->nid);
-        variable_del('squeeze_node_'. $node->nid .'_show_page');
+      // Only process if there were Squeeze settings on the form
+      if (isset($node->squeeze_form)) {
+        if ($node->squeeze_form) {
+          variable_set('squeeze_node_'. $node->nid, $node->squeeze_form);
+          variable_set('squeeze_node_'. $node->nid .'_show_page', $node->squeeze_show_page);
+        }
+        else {
+          variable_del('squeeze_node_'. $node->nid);
+          variable_del('squeeze_node_'. $node->nid .'_show_page');
+        }
       }
       break;
     case 'delete':
@@ -174,4 +177,14 @@ function squeeze_nodeapi(&$node, $op, $a3, $a4) {
       variable_del('squeeze_node_'. $node->nid .'_show_page');
       break;
   }
+}
+
+/**
+ * Indicates whether Squeeze is enabled for the given content type.
+ *
+ * @param string $type
+ * @return boolean
+ */
+function squeeze_is_supported_type($type) {
+  return in_array($type, variable_get('squeeze_settings_content_types', array()));
 }
