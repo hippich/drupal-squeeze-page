@@ -28,76 +28,79 @@ function squeeze_menu() {
 
 /**
  * Implements hook_init().
+ *
+ * This implementation will:
+ * - Check if Squeeze has to intercept the current request:
+ *   - Anoynmous users only and this is an anonymous user
+ *   - Check type of request: node_page_view's and filefield_stats_download's
+ *     are candidates for interception
+ *   - Are we at the right level (show_page: filefield_stats_download;
+ *     !show_page: node_page_view)
+ *   - Has a webform been defined for this page (taking into account restriction to specified content types only)
+ *   - Check permission to skip Squeeze interception
+ * The permission check is been done last as this may call the database. All
+ * other checks are fast.
  */
 function squeeze_init() {
-  if (variable_get('squeeze_settings_anonymous_only', 0) ? user_is_anonymous() : !user_access('skip squeeze page')) {
+  // Anonymous users only and this is not an anonymous user?
+  if (variable_get('squeeze_settings_anonymous_only', 0) && !user_is_anonymous()) {
+    return;
+  }
 
-    $nid = '';
+  // node_page_view or filefield_stats_download? and at the correct level?
+  $node = NULL;
+  $current_menu_item = menu_get_item();
+  // @todo: can modules take over router paths? if so, perhaps we'd better check on $current_menu_item['path'] === 'node/%'
+  if ($current_menu_item['page_callback'] === 'node_page_view') {
+    $node = $current_menu_item['page_arguments'][0];
+    $showing_page = TRUE;
+  }
+  else if ($current_menu_item['page_callback'] === 'filefield_stats_download') {
+    $node = $current_menu_item['page_arguments'][1];
+    $showing_page = FALSE;
+  }
+  if ($node === NULL || squeeze_get_show_page($node) == $showing_page) {
+    return;
+  }
 
-    if (module_exists("filefield_stats")) {
-      // The file path changes depending on the file_download setting
-      switch (variable_get('file_downloads', FILE_DOWNLOADS_PUBLIC)) {
-        case FILE_DOWNLOADS_PUBLIC :
-          $filepath = file_directory_path();
-          break;
+  // Squeeze webform attached?
+  if (($squeeze_webform_nid = squeeze_get_webform($node)) == 0) {
+    return;
+  }
 
-        case FILE_DOWNLOADS_PRIVATE:
-          $filepath = 'system/files';
-          break;
-      }
+  // Non-anonymous users as well but user does have the 'skip squeeze page' permission
+  if (!variable_get('squeeze_settings_anonymous_only', 0) && user_access('skip squeeze page')) {
+    return;
+  }
 
-      // We need to know how "deep" the filepath is - this changes the page argument positions
-      $offset = count(explode('/', $filepath));
+  // This is a page request to be intercepted: don't cache it
+  $GLOBALS['conf']['cache'] = 0;
 
-      if (arg($offset) == 'filefield_stats') {
-        $vid = arg($offset + 2);
-        $n = node_load(array('vid' => $vid));
-        $nid = $n->nid;
-      }
-    }
+  // Has the webform already been filled submitted?
+  global $user;
+  $sid = 0;
+  if ($_SESSION['webform_submissions'][$squeeze_webform_nid] > 0) {
+    $sid = $_SESSION['webform_submissions'][$squeeze_webform_nid];
+  }
+  elseif ($user->uid > 0) {
+    $sid = db_result(db_query("SELECT sid FROM {webform_submissions} WHERE nid = %d AND uid = %d",
+             $squeeze_webform_nid, $user->uid));
+  }
 
-    if (! is_object($n) && arg(0) == 'node' && is_numeric(arg(1))) {
-      $nid = arg(1);
-    }
-
-    // Check if currently opening node has squeeze webform attached
-    if ($nid > 0) {
-      $GLOBALS['conf']['cache'] = 0;
-      $show_page = variable_get('squeeze_node_'. $nid .'_show_page', 0);
-
-      $squeeze_page_nid = 0;
-
-      if (($show_page && arg(0) != 'node') || (! $show_page)) {
-        $squeeze_page_nid = variable_get('squeeze_node_'. $nid, 0);
-      }
-
-      if ($squeeze_page_nid > 0) {
-        $GLOBALS['conf']['cache'] = 0;
-        global $user;
-        if ($_SESSION['webform_submissions'][$squeeze_page_nid] > 0) {
-          $sid = $_SESSION['webform_submissions'][$squeeze_page_nid];
-        }
-        elseif ($user->uid > 0) {
-          $sid = db_result(
-                   db_query(
-                     "SELECT sid FROM {webform_submissions} WHERE nid = %d AND uid = %d",
-                     $squeeze_page_nid,
-                     $user->uid
-                   )
-                 );
-        }
-
-        if (!$sid) {
-          $_SESSION['destination'] = $_GET['q'];
-          drupal_goto('node/'. $squeeze_page_nid);
-        }
-      }
-    }
+  if (!$sid) {
+    $_SESSION['destination'] = $_GET['q'];
+    drupal_goto('node/'. $squeeze_webform_nid);
   }
 }
 
 /**
  * Implements hook_form_alter().
+ *
+ * This implementation will alter:
+ * - Node edit forms: permissions and settings allowing, a fieldset with the
+ *   Squeeze settings will be added to the form.
+ * - Webform entry forms: A submit handler will be added so this module can
+ *   keep track of submitted webforms.
  */
 function squeeze_form_alter(&$form, &$form_state, $form_id) {
   if ($form['#id'] == 'node-form' && squeeze_is_supported_type($form['#node']->type) && user_access("configure node's squeeze settings")) {
@@ -105,28 +108,26 @@ function squeeze_form_alter(&$form, &$form_state, $form_id) {
       '#type'         => 'fieldset',
       '#title'        => t("Squeeze page settings"),
       '#collapsible'  => 1,
-      '#collapsed'    => !variable_get('squeeze_node_'. $form['#node']->nid, 0),
+      '#collapsed'    => !squeeze_get_webform($form['#node']),
     );
 
     $options = array('' => t("None"));
-
     $node_rows = db_query("SELECT nid, title FROM {node} n WHERE status = 1 AND EXISTS (SELECT * FROM {webform} w WHERE w.nid = n.nid)");
     while ($row = db_fetch_object($node_rows)) {
       $options[$row->nid] = $row->title;
     }
-
     $form['squeeze_fieldset']['squeeze_form'] = array(
       '#type'         => 'select',
       '#title'        => t("Squeeze form"),
-      '#default_value'=> variable_get('squeeze_node_'. $form['#node']->nid, 0),
+      '#default_value'=> squeeze_get_webform($form['#node']),
       '#options'      => $options,
     );
 
     $form['squeeze_fieldset']['squeeze_show_page'] = array(
       '#type'         => 'checkbox',
       '#title'        => t("Show page?"),
-      '#description'  => t("If you check this, user will be allowed to see, but all filefield files will be protected with squeeze form. Filefields should have 'Generic files + Stats URL' display type enabled in 'Display fields' tab for this content type"),
-      '#default_value'=> variable_get('squeeze_node_'. $form['#node']->nid .'_show_page', 0),
+      '#description'  => t("If you check this, user will be allowed to see the page, but all filefield files will be protected with squeeze form. Filefields should have 'Generic files + Stats URL [+ Downlaod Count]' display type enabled in 'Display fields' tab for this content type."),
+      '#default_value'=> squeeze_get_show_page($form['#node']),
     );
 
     $form['#submit'][] = 'squeeze_form_alter_submit';
@@ -137,7 +138,14 @@ function squeeze_form_alter(&$form, &$form_state, $form_id) {
   }
 }
 
-
+/**
+ * Form submit callback for webform submissions.
+ *
+ * This callback:
+ * - Keeps track of webforms submitted by the current visitor.
+ * - If Squeeze redirected the visitor to this webform, it will now instruct
+ *   Drupal to redirect back to the intercepted page or download.
+ */
 function squeeze_webform_save_sid_on_submit($form, &$form_state) {
   global $user;
 
@@ -162,12 +170,16 @@ function squeeze_nodeapi(&$node, $op, $a3, $a4) {
     case 'update':
       // Only process if there were Squeeze settings on the form
       if (isset($node->squeeze_form)) {
-        if ($node->squeeze_form) {
+        if ($node->squeeze_form != variable_get('squeeze_settings_form', 0)) {
           variable_set('squeeze_node_'. $node->nid, $node->squeeze_form);
-          variable_set('squeeze_node_'. $node->nid .'_show_page', $node->squeeze_show_page);
         }
         else {
           variable_del('squeeze_node_'. $node->nid);
+        }
+        if ($node->squeeze_show_page != variable_get('squeeze_settings_show_page', 0)) {
+          variable_set('squeeze_node_'. $node->nid .'_show_page', $node->squeeze_show_page);
+        }
+        else {
           variable_del('squeeze_node_'. $node->nid .'_show_page');
         }
       }
@@ -182,9 +194,30 @@ function squeeze_nodeapi(&$node, $op, $a3, $a4) {
 /**
  * Indicates whether Squeeze is enabled for the given content type.
  *
+ * Note that if no enbabled content types are registered, all content types
+ * are enabled for Squeeze.
+ *
  * @param string $type
  * @return boolean
  */
 function squeeze_is_supported_type($type) {
-  return in_array($type, variable_get('squeeze_settings_content_types', array()));
+  $supported_types = variable_get('squeeze_settings_content_types', array());
+  return empty($supported_types) || in_array($type, $supported_types);
+}
+
+/**
+ * Helper function to return the webform (nid) for a given nid.
+ *
+ * This function takes into acount whether the content tpe of the node is a
+ * supported content type.
+ */
+function squeeze_get_webform($node) {
+  return squeeze_is_supported_type($node->type) ? variable_get('squeeze_node_' . $node->nid, variable_get('squeeze_settings_form', 0)) : 0;
+}
+
+/**
+ * Helper function to return the show page setting for a given nid.
+ */
+function squeeze_get_show_page($node) {
+  return variable_get("squeeze_node_{$node->nid}_show_page", variable_get('squeeze_settings_show_page', 0));
 }
