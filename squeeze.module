@@ -11,11 +11,11 @@ function squeeze_perm() {
 
 function squeeze_init() {
   global $user;
-  
+
   if (!user_access('skip squeeze page')) {
-  
+
     $nid = '';
-    
+
     if (module_exists("filefield_stats")) {
       // The file path changes depending on the file_download setting
       switch (variable_get('file_downloads', FILE_DOWNLOADS_PUBLIC)) {
@@ -41,29 +41,29 @@ function squeeze_init() {
     if (! is_object($n) && arg(0) == 'node' && is_numeric(arg(1))) {
       $nid = arg(1);
     }
-    
+
     // Check if currently opening node has squeeze webform attached
     if ($nid > 0) {
       $GLOBALS['conf']['cache'] = 0;
       $show_page = variable_get('squeeze_node_'. $nid .'_show_page', 0);
 
       $squeeze_page_nid = 0;
-      
+
       if (($show_page && arg(0) != 'node') || (! $show_page)) {
         $squeeze_page_nid = variable_get('squeeze_node_'. $nid, 0);
       }
-      
+
       if ($squeeze_page_nid > 0) {
         $GLOBALS['conf']['cache'] = 0;
-        
+
         if ($_SESSION['webform_submissions'][$squeeze_page_nid] > 0) {
           $sid = $_SESSION['webform_submissions'][$squeeze_page_nid];
         }
         elseif ($user->uid > 0) {
           $sid = db_result(
                    db_query(
-                     "SELECT sid FROM {webform_submissions} WHERE nid = %d AND uid = %d", 
-                     $squeeze_page_nid, 
+                     "SELECT sid FROM {webform_submissions} WHERE nid = %d AND uid = %d",
+                     $squeeze_page_nid,
                      $user->uid
                    )
                  );
@@ -75,8 +75,8 @@ function squeeze_init() {
         }
       }
     }
-    
-    
+
+
   }
 }
 
@@ -89,31 +89,31 @@ function squeeze_form_alter(&$form, &$form_state, $form_id) {
       '#collapsible'  => 1,
       '#collapsed'    => !variable_get('squeeze_node_'. $form['#node']->nid, 0),
     );
-    
+
     $options = array('' => t("None"));
-    
+
     $node_rows = db_query("SELECT nid, title FROM {node} WHERE type = '%s'", 'webform');
     while ($row = db_fetch_object($node_rows)) {
       $options[$row->nid] = $row->title;
     }
-    
+
     $form['squeeze_fieldset']['squeeze_form'] = array(
       '#type'         => 'select',
       '#title'        => t("Squeeze form"),
       '#default_value'=> variable_get('squeeze_node_'. $form['#node']->nid, 0),
       '#options'      => $options,
     );
-    
+
     $form['squeeze_fieldset']['squeeze_show_page'] = array(
       '#type'         => 'checkbox',
       '#title'        => t("Show page?"),
       '#description'  => t("If you check this, user will be allowed to see, but all filefield files will be protected with squeeze form. Filefields should have 'Generic files + Stats URL' display type enabled in 'Display fields' tab for this content type"),
       '#default_value'=> variable_get('squeeze_node_'. $form['#node']->nid .'_show_page', 0),
     );
-    
+
     $form['#submit'][] = 'squeeze_form_alter_submit';
   }
-  
+
   if (strpos($form_id, 'webform_client_form_') === 0) {
     $form['#submit'][] = 'squeeze_webform_save_sid_on_submit';
   }
@@ -122,7 +122,7 @@ function squeeze_form_alter(&$form, &$form_state, $form_id) {
 
 function squeeze_webform_save_sid_on_submit($form, &$form_state) {
   global $user;
-  
+
   if ($user->uid == 0) {
     $sid = $form_state['values']['details']['sid'];
     $nid = $form_state['values']['details']['nid'];
@@ -148,6 +148,10 @@ function squeeze_nodeapi(&$node, $op, $a3, $a4) {
         variable_del('squeeze_node_'. $node->nid);
         variable_del('squeeze_node_'. $node->nid .'_show_page');
       }
+      break;
+    case 'delete':
+      variable_del('squeeze_node_'. $node->nid);
+      variable_del('squeeze_node_'. $node->nid .'_show_page');
       break;
   }
 }
