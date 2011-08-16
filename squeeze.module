@@ -70,7 +70,7 @@ function squeeze_init() {
         }
 
         if (!$sid) {
-          $_SESSION['destination'] = urlencode(url($_GET['q']));
+          $_SESSION['destination'] = $_GET['q'];
           drupal_goto('node/'. $squeeze_page_nid);
         }
       }
