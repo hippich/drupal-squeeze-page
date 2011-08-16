@@ -110,7 +110,7 @@ function squeeze_form_alter(&$form, &$form_state, $form_id) {
 
     $options = array('' => t("None"));
 
-    $node_rows = db_query("SELECT nid, title FROM {node} WHERE type = '%s'", 'webform');
+    $node_rows = db_query("SELECT nid, title FROM {node} n WHERE status = 1 AND EXISTS (SELECT * FROM {webform} w WHERE w.nid = n.nid)");
     while ($row = db_fetch_object($node_rows)) {
       $options[$row->nid] = $row->title;
     }
