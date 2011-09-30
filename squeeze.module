@@ -5,7 +5,7 @@
 function squeeze_perm() {
   return array(
     "administer squeeze settings",
-    "configure node's squeeze settings",
+    "configure node squeeze settings",
     "skip squeeze page",
   );
 }
@@ -103,7 +103,7 @@ function squeeze_init() {
  *   keep track of submitted webforms.
  */
 function squeeze_form_alter(&$form, &$form_state, $form_id) {
-  if ($form['#id'] == 'node-form' && squeeze_is_supported_type($form['#node']->type) && user_access("configure node's squeeze settings")) {
+  if ($form['#id'] == 'node-form' && squeeze_is_supported_type($form['#node']->type) && user_access("configure node squeeze settings")) {
     $form['squeeze_fieldset'] = array(
       '#type'         => 'fieldset',
       '#title'        => t("Squeeze page settings"),
@@ -126,7 +126,7 @@ function squeeze_form_alter(&$form, &$form_state, $form_id) {
     $form['squeeze_fieldset']['squeeze_show_page'] = array(
       '#type'         => 'checkbox',
       '#title'        => t("Show page?"),
-      '#description'  => t("If you check this, user will be allowed to see the page, but all filefield files will be protected with squeeze form. Filefields should have 'Generic files + Stats URL [+ Downlaod Count]' display type enabled in 'Display fields' tab for this content type."),
+      '#description'  => t("If you check this, user will be allowed to see the page, but all filefield files will be protected with squeeze form. Filefields should have 'Generic files + Stats URL [+ Download Count]' display type enabled in 'Display fields' tab for this content type."),
       '#default_value'=> squeeze_get_show_page($form['#node']),
     );
 
